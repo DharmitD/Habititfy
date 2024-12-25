@@ -1,0 +1,12 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+# IDE settings
+.idea/
+
+# Python build files
+*.egg-info/
+
+# Virtual environments
+venv/
