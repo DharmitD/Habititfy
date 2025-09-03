@@ -17,14 +17,24 @@ class HabitTracker:
         habits = []
         with open(self.data_file, mode="r") as file:
             reader = csv.reader(file)
+            next(reader)  # Skip header row
             for row in reader:
-                habits.append({"date": row[0], "habit": row[1], "status": row[2]})
+                if len(row) >= 3:  # Ensure row has all required fields
+                    habits.append({"date": row[0], "habit": row[1], "status": row[2]})
         return habits
 
     def delete_habit(self, habit_name: str):
         """Delete all entries of a specific habit."""
         with open(self.data_file, mode="r") as file:
             rows = list(csv.reader(file))
+        
+        if not rows:
+            return
+        
+        # Keep header and filter out the habit
+        header = rows[0]
+        filtered_rows = [header] + [row for row in rows[1:] if len(row) >= 2 and row[1] != habit_name]
+        
         with open(self.data_file, mode="w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerows([row for row in rows if row[1] != habit_name])
+            writer.writerows(filtered_rows)
