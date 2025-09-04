@@ -7,7 +7,14 @@ from sdk.ai_coach import AICoach
 
 @click.group()
 def cli():
+    """Habitify - A powerful habit tracking CLI tool."""
     pass
+
+@cli.command()
+def version():
+    """Show version information."""
+    click.echo("Habitify CLI v1.0.0")
+    click.echo("A powerful habit tracking command-line tool")
 
 @cli.command()
 @click.argument("habit_name")
@@ -293,6 +300,276 @@ def dashboard():
         }.get(entry['status'].lower(), '📝')
         
         click.echo(f"   {status_emoji} {entry['date']} - {entry['habit']}")
+
+@cli.command()
+@click.argument("habit_name")
+@click.option("--description", help="Description of the habit")
+@click.option("--category", help="Category for the habit (e.g., Health, Productivity)")
+def create_habit(habit_name, description, category):
+    """Create a new habit with optional description and category."""
+    habits_file = "data/habits_metadata.json"
+    
+    try:
+        with open(habits_file, 'r') as f:
+            habits_metadata = json.load(f)
+    except FileNotFoundError:
+        habits_metadata = {}
+    
+    habits_metadata[habit_name] = {
+        'description': description or f"Track your {habit_name.lower()} habit",
+        'category': category or 'General',
+        'created_date': datetime.now().strftime('%Y-%m-%d'),
+        'total_entries': 0
+    }
+    
+    with open(habits_file, 'w') as f:
+        json.dump(habits_metadata, f, indent=2)
+    
+    click.echo(f"✅ Created habit '{habit_name}'")
+    if description:
+        click.echo(f"   Description: {description}")
+    if category:
+        click.echo(f"   Category: {category}")
+
+@cli.command()
+def list_habits():
+    """List all created habits with their metadata."""
+    habits_file = "data/habits_metadata.json"
+    
+    try:
+        with open(habits_file, 'r') as f:
+            habits_metadata = json.load(f)
+    except FileNotFoundError:
+        click.echo("No habits created yet. Use 'create-habit' to add some!")
+        return
+    
+    if not habits_metadata:
+        click.echo("No habits created yet. Use 'create-habit' to add some!")
+        return
+    
+    click.echo("\n📋 CREATED HABITS")
+    click.echo("=" * 50)
+    
+    for habit_name, metadata in habits_metadata.items():
+        click.echo(f"\n🎯 {habit_name}")
+        click.echo(f"   📝 {metadata['description']}")
+        click.echo(f"   📂 Category: {metadata['category']}")
+        click.echo(f"   📅 Created: {metadata['created_date']}")
+        click.echo(f"   📊 Total entries: {metadata['total_entries']}")
+
+@cli.command()
+@click.argument("habit_name")
+@click.option("--confirm", is_flag=True, help="Skip confirmation prompt")
+def remove_habit(habit_name, confirm):
+    """Remove a habit and all its metadata."""
+    habits_file = "data/habits_metadata.json"
+    
+    try:
+        with open(habits_file, 'r') as f:
+            habits_metadata = json.load(f)
+    except FileNotFoundError:
+        click.echo(f"Habit '{habit_name}' not found.")
+        return
+    
+    if habit_name not in habits_metadata:
+        click.echo(f"Habit '{habit_name}' not found.")
+        return
+    
+    if not confirm:
+        if not click.confirm(f"Are you sure you want to remove habit '{habit_name}' and all its metadata?"):
+            click.echo("Operation cancelled.")
+            return
+    
+    del habits_metadata[habit_name]
+    
+    with open(habits_file, 'w') as f:
+        json.dump(habits_metadata, f, indent=2)
+    
+    click.echo(f"✅ Removed habit '{habit_name}' and its metadata")
+
+@cli.command()
+@click.option("--days", default=30, help="Number of days to show progress for")
+def progress(days):
+    """Show visual progress charts for all habits."""
+    tracker = HabitTracker()
+    habits = tracker.view_habits()
+    
+    if not habits:
+        click.echo("No habits found. Start by logging some habits!")
+        return
+    
+    # Filter by date range
+    cutoff_date = datetime.now().date() - timedelta(days=days)
+    recent_habits = [h for h in habits if datetime.strptime(h['date'], '%Y-%m-%d').date() >= cutoff_date]
+    
+    # Group by habit
+    habit_data = defaultdict(list)
+    for h in recent_habits:
+        habit_data[h['habit']].append(h)
+    
+    click.echo(f"\n📊 PROGRESS CHARTS (Last {days} days)")
+    click.echo("=" * 60)
+    
+    for habit_name, entries in habit_data.items():
+        click.echo(f"\n🎯 {habit_name}")
+        
+        # Create a simple ASCII progress bar
+        total_days = days
+        completed_days = len([e for e in entries if e['status'].lower() in ['completed', 'exceeded']])
+        progress_percentage = (completed_days / total_days) * 100
+        
+        # Create progress bar
+        bar_length = 30
+        filled_length = int(bar_length * progress_percentage / 100)
+        bar = '█' * filled_length + '░' * (bar_length - filled_length)
+        
+        click.echo(f"   Progress: [{bar}] {progress_percentage:.1f}%")
+        click.echo(f"   Completed: {completed_days}/{total_days} days")
+        
+        # Show recent status
+        recent_entries = sorted(entries, key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d').date(), reverse=True)[:7]
+        click.echo("   Recent: ", nl=False)
+        for entry in reversed(recent_entries):
+            status_emoji = {
+                'completed': '✅',
+                'exceeded': '🚀',
+                'partial': '⚠️',
+                'skipped': '❌'
+            }.get(entry['status'].lower(), '📝')
+            click.echo(status_emoji, nl=False)
+        click.echo()  # New line
+
+@cli.command()
+def achievements():
+    """Show achievements and badges earned."""
+    tracker = HabitTracker()
+    habits = tracker.view_habits()
+    
+    if not habits:
+        click.echo("No habits found. Start by logging some habits!")
+        return
+    
+    # Calculate achievements
+    achievements = []
+    
+    # Total entries achievements
+    total_entries = len(habits)
+    if total_entries >= 1000:
+        achievements.append(("🏆", "Data Master", "Logged 1000+ entries"))
+    elif total_entries >= 500:
+        achievements.append(("🥇", "Data Collector", "Logged 500+ entries"))
+    elif total_entries >= 100:
+        achievements.append(("🥈", "Data Tracker", "Logged 100+ entries"))
+    elif total_entries >= 50:
+        achievements.append(("🥉", "Data Starter", "Logged 50+ entries"))
+    
+    # Streak achievements
+    unique_habits = set(h['habit'] for h in habits)
+    if len(unique_habits) >= 10:
+        achievements.append(("🌟", "Habit Master", "Tracking 10+ different habits"))
+    elif len(unique_habits) >= 5:
+        achievements.append(("⭐", "Habit Explorer", "Tracking 5+ different habits"))
+    
+    # Recent completion achievements
+    week_ago = datetime.now().date() - timedelta(days=7)
+    recent_habits = [h for h in habits if datetime.strptime(h['date'], '%Y-%m-%d').date() >= week_ago]
+    completion_count = len([h for h in recent_habits if h['status'].lower() in ['completed', 'exceeded']])
+    
+    if completion_count >= 20:
+        achievements.append(("🔥", "Week Warrior", "Completed 20+ habits this week"))
+    elif completion_count >= 10:
+        achievements.append(("💪", "Week Champion", "Completed 10+ habits this week"))
+    elif completion_count >= 5:
+        achievements.append(("👍", "Week Starter", "Completed 5+ habits this week"))
+    
+    click.echo("\n🏆 ACHIEVEMENTS & BADGES")
+    click.echo("=" * 40)
+    
+    if achievements:
+        for emoji, title, description in achievements:
+            click.echo(f"{emoji} {title}")
+            click.echo(f"   {description}")
+            click.echo()
+    else:
+        click.echo("No achievements yet. Keep tracking your habits to earn badges!")
+        click.echo("\n🎯 Tips to earn achievements:")
+        click.echo("   • Log 50+ entries to get your first badge")
+        click.echo("   • Track 5+ different habits")
+        click.echo("   • Complete 5+ habits this week")
+
+@cli.command()
+@click.option("--backup-dir", default="backups", help="Directory to store backups")
+def backup(backup_dir):
+    """Create a backup of all habit data."""
+    import shutil
+    import os
+    
+    # Create backup directory if it doesn't exist
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_name = f"habitify_backup_{timestamp}"
+    backup_path = os.path.join(backup_dir, backup_name)
+    
+    # Create backup directory
+    os.makedirs(backup_path, exist_ok=True)
+    
+    # Copy data files
+    files_to_backup = [
+        "data/habits.csv",
+        "data/goals.json",
+        "data/habits_metadata.json"
+    ]
+    
+    backed_up_files = []
+    for file_path in files_to_backup:
+        if os.path.exists(file_path):
+            shutil.copy2(file_path, backup_path)
+            backed_up_files.append(file_path)
+    
+    if backed_up_files:
+        click.echo(f"✅ Backup created successfully!")
+        click.echo(f"📁 Location: {backup_path}")
+        click.echo(f"📄 Files backed up: {len(backed_up_files)}")
+        for file_path in backed_up_files:
+            click.echo(f"   • {file_path}")
+    else:
+        click.echo("⚠️ No data files found to backup")
+
+@cli.command()
+@click.argument("backup_path")
+def restore(backup_path):
+    """Restore habit data from a backup."""
+    import shutil
+    import os
+    
+    if not os.path.exists(backup_path):
+        click.echo(f"❌ Backup path '{backup_path}' does not exist")
+        return
+    
+    if not click.confirm(f"Are you sure you want to restore from '{backup_path}'? This will overwrite current data."):
+        click.echo("Operation cancelled.")
+        return
+    
+    # Ensure data directory exists
+    os.makedirs("data", exist_ok=True)
+    
+    # Restore files
+    restored_files = []
+    for filename in os.listdir(backup_path):
+        if filename.endswith(('.csv', '.json')):
+            src = os.path.join(backup_path, filename)
+            dst = os.path.join("data", filename)
+            shutil.copy2(src, dst)
+            restored_files.append(filename)
+    
+    if restored_files:
+        click.echo(f"✅ Restore completed successfully!")
+        click.echo(f"📄 Files restored: {len(restored_files)}")
+        for filename in restored_files:
+            click.echo(f"   • {filename}")
+    else:
+        click.echo("⚠️ No valid backup files found")
 
 if __name__ == "__main__":
     cli()
